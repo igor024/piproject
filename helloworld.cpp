@@ -12,7 +12,7 @@ namespace speech_v1 = google::cloud::speech_v1::v2_37;
 
 const int SAMPLE_RATE = 44100;
 const int FRAMES_PER_BUFFER = 512;
-
+const int NUM_SECONDS = 4;
 std::string ReadFileToString(const std::string& file_path) {
 	std::ifstream file(file_path, std::ios::binary);
 	std::ostringstream contents;
@@ -22,103 +22,63 @@ std::string ReadFileToString(const std::string& file_path) {
 
 static void checkPaErr(PaError err) {
 	if(err != paNoError) {
-		printf("PortAudio error: %s\n", Pa_GetErrorText(err));
+		cout << "PortAudio error: " << Pa_GetErrorText(err) << endl;
 		exit(EXIT_FAILURE);
 	}
 }
 
-
-static int recordCallback( const void *inputBuffer, void *outputBuffer,
-		unsigned long framesPerBuffer,
-		const PaStreamCallbackTimeInfo* timeInfo,
-		PaStreamCallbackFlags statusFlags,
-		void *userData )
-{
-	paTestData *data = (paTestData*)userData;
-	const SAMPLE *rptr = (const SAMPLE*)inputBuffer;
-	SAMPLE *wptr = &data->recordedSamples[data->frameIndex * NUM_CHANNELS];
-	long framesToCalc;
-	long i;
-	int finished;
-	unsigned long framesLeft = data->maxFrameIndex - data->frameIndex;
-
-	(void) outputBuffer; /* Prevent unused variable warnings. */
-	(void) timeInfo;
-	(void) statusFlags;
-	(void) userData;
-
-	if( framesLeft < framesPerBuffer )
-	{
-		framesToCalc = framesLeft;
-		finished = paComplete;
-	}
-	else
-	{
-		framesToCalc = framesPerBuffer;
-		finished = paContinue;
-	}
-
-	if( inputBuffer == NULL )
-	{
-		for( i=0; i<framesToCalc; i++ )
-		{
-			*wptr++ = SAMPLE_SILENCE;  /* left */
-			if( NUM_CHANNELS == 2 ) *wptr++ = SAMPLE_SILENCE;  /* right */
-		}
-	}
-	else
-	{
-		for( i=0; i<framesToCalc; i++ )
-		{
-			*wptr++ = *rptr++;  /* left */
-			if( NUM_CHANNELS == 2 ) *wptr++ = *rptr++;  /* right */
-		}
-	}
-	data->frameIndex += framesToCalc;
-	return finished;
-}
 
 void showDevices() {
 	int numDev = Pa_GetDeviceCount();
-	printf("Num devices: %d\n", numDev);
+	cout << "Num devices: " << numDev << endl;
 	if(numDev < 0) {
-		printf("Error counting devices");
+		cout << "Error counting devices" << endl;
 		exit(EXIT_FAILURE);
 	} else if(numDev == 0) {
-		printf("No devices found");
+		cout << "No devices found" << endl;
 		exit(EXIT_SUCCESS);
 	}
 
 	const PaDeviceInfo* devInfo;
 	for(int i = 0; i < numDev; ++i) {
 		devInfo = Pa_GetDeviceInfo(i);
-		printf("Device %d:\nName: %s\ndefaultSampleRate: %f\n",
-				i,
-				devInfo->name,
-				devInfo->defaultSampleRate);
+		cout << "Device " << i << ":" << endl
+		     << "Name: " << devInfo->name << endl
+		     << "defaultSampleRate: " << devInfo->defaultSampleRate << endl
+		     << "inp chan: " << devInfo->maxInputChannels << endl
+		     << "out chan: " << devInfo->maxOutputChannels << endl;
 	}
 
 	int dev;
 	cout << "enter dev: ";
+	cin.clear();
 	cin >> dev;
 
+	cout << "got here" << endl;
+	/*
 	PaStreamParameters inputParameters;
 	PaStreamParameters outputParameters;
+	
+	cout << "got here 2" << endl;
 
 	memset(&inputParameters, 0, sizeof(inputParameters));
-	inputParameters.channelCount = 2;
+	inputParameters.channelCount = 1;
 	inputParameters.device = dev;
 	inputParameters.hostApiSpecificStreamInfo = NULL;
 	inputParameters.sampleFormat = paFloat32;
 	inputParameters.suggestedLatency = Pa_GetDeviceInfo(dev)->defaultLowInputLatency;
 
+	cout << "got here 3" << endl;
+	
 	memset(&outputParameters, 0, sizeof(outputParameters));
-	outputParameters.channelCount = 2;
+	outputParameters.channelCount = 1;
 	outputParameters.device = dev;
 	outputParameters.hostApiSpecificStreamInfo = NULL;
 	outputParameters.sampleFormat = paFloat32;
 	outputParameters.suggestedLatency = Pa_GetDeviceInfo(dev)->defaultLowInputLatency;
 	
+	cout << "got here 4" << endl;
+
 	PaStream* stream;
 	PaError err = Pa_OpenStream(
 		&stream,
@@ -127,15 +87,50 @@ void showDevices() {
 	SAMPLE_RATE,
 	FRAMES_PER_BUFFER,
 	paNoFlag,
-	patestCallback,
+	NULL,
 	NULL
 
 	);
+*/
+	
+    PaStream *stream;
+    short buffer[FRAMES_PER_BUFFER];
+
+    PaError err = Pa_OpenDefaultStream(&stream,
+                               2, // input channels
+                               0,            // output channels
+                               paInt16,
+                               SAMPLE_RATE,
+                               FRAMES_PER_BUFFER,
+                               nullptr,      // no callback
+                               nullptr);     // no user data
 	checkPaErr(err);
 
+	cout << "starting stream" << endl;
 	err = Pa_StartStream(stream);
 	checkPaErr(err);
 
+	cout << "commencing recording audio" << endl;
+	int totalFrames = SAMPLE_RATE * NUM_SECONDS;
+	int numBuffers = totalFrames / FRAMES_PER_BUFFER;
+	cout << "Total frames: " << totalFrames << ", numBuffers: " << numBuffers << endl;
+	FILE* outFile = fopen("recorded.raw", "wb");
+	for (int i = 0; i < numBuffers; ++i) {
+		cout << "reading buffer " << i << " of " << numBuffers << endl;
+		cout.flush(); // Force output to appear immediately
+		err = Pa_ReadStream(stream, buffer, FRAMES_PER_BUFFER);
+		if (err != paNoError) {
+			cout << "Pa_ReadStream error on iteration " << i << ": " << Pa_GetErrorText(err) << endl;
+			break;
+		}
+		cout << "Got here 5\n";
+		fwrite(buffer, sizeof(short), FRAMES_PER_BUFFER, outFile);
+		cout << "Got here 6\n";
+	}
+	fclose(outFile);
+
+
+	checkPaErr(err);
 	Pa_Sleep(10 * 1000);
 
 	err = Pa_StopStream(stream);
