@@ -8,7 +8,7 @@ find_package(google_cloud_cpp_speech REQUIRED)
 
 find_package(portaudio CONFIG REQUIRED)
 
-add_executable(HelloWorld helloworld.cpp)
+add_executable(HelloWorld recorder.cpp)
 
 target_link_libraries(HelloWorld PRIVATE fmt::fmt)
 

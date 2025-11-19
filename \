@@ -47,10 +47,10 @@ int main() {
 	//start PortAudio
 	try {
 		run(Pa_Initialize());
-		printf("Running %s\n", Pa_GetVersionText()); 
+		printf("Running %s", Pa_GetVersionText()); 
 	}
 	catch (PaError err) {
-		printf("Pa_Initialize() error: %s\n", Pa_GetErrorText(err));
+		printf("Pa_Initialize() error: %s", Pa_GetErrorText(err));
 	}
 
 	//main code
@@ -59,15 +59,13 @@ int main() {
 		stereo data = {0, 0};
 
 		run(Pa_OpenDefaultStream(&stream, 0, 2, paFloat32, SAMPLE_RATE, FRAMES_PER_BUFFER, callback, &data));
-		printf("Starting stream\n");	
 		run(Pa_StartStream(stream));
 		Pa_Sleep(4000);
-		printf("Closing stream\n");
 		run(Pa_StopStream(stream));
 		run(Pa_CloseStream(stream));
 	}
 	catch (PaError err) {
-		printf("Main code error: %s\n", Pa_GetErrorText(err));
+		printf("Main code error: %s", Pa_GetErrorText(err));
 	}
 
 	//end portAudio
@@ -75,6 +73,6 @@ int main() {
 		run(Pa_Terminate());
 	}
 	catch (PaError err) {
-		printf("Pa_Initialize() error: %s\n", Pa_GetErrorText(err));
+		printf("Pa_Initialize() error: %s", Pa_GetErrorText(err));
 	}
 }
