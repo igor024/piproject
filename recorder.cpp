@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <iostream>
+#include <strings.h>
 #include "portaudio.h"
 
 const double SAMPLE_RATE = 44120;
@@ -43,6 +45,23 @@ void run(PaError err) {
 	}
 }
 
+int findDevice() {
+	const int numDev = Pa_GetDeviceCount();
+	if(numDev < 0) {
+		printf("Error fetching device count!\n");
+		throw(numDev);
+	}
+	for(int i = 0; i < numDev; ++i) {
+		const PaDeviceInfo* devInfo = Pa_GetDeviceInfo(i);
+		printf("Device %d Name: %s\n maxOutputChannels: %d\n defaultSampleRate: %f\n\n", i, devInfo->name, devInfo->maxOutputChannels, devInfo->defaultSampleRate);
+	}
+	printf("Enter device number: ");
+	int dev;
+	std::cin >> dev;
+	printf("\n Chose device %d\n", dev);
+	return dev;
+}
+
 int main() {
 	//start PortAudio
 	try {
@@ -55,10 +74,32 @@ int main() {
 
 	//main code
 	try {
+		int dev = findDevice();
 		PaStream* stream;
 		stereo data = {0, 0};
 
-		run(Pa_OpenDefaultStream(&stream, 0, 2, paFloat32, SAMPLE_RATE, FRAMES_PER_BUFFER, callback, &data));
+		PaStreamParameters outputParameters;
+		PaStreamParameters inputParameters;
+
+		bzero( &inputParameters, sizeof( inputParameters ) ); //not necessary if you are filling in all the fields
+		inputParameters.channelCount = 0;
+		inputParameters.device = dev;
+		inputParameters.hostApiSpecificStreamInfo = NULL;
+		inputParameters.sampleFormat = paFloat32;
+		inputParameters.suggestedLatency = Pa_GetDeviceInfo(dev)->defaultLowInputLatency ;
+		inputParameters.hostApiSpecificStreamInfo = NULL; //See you specific host's API docs for info on using this field
+
+
+		bzero( &outputParameters, sizeof( outputParameters ) ); //not necessary if you are filling in all the fields
+		outputParameters.channelCount = 22;
+		outputParameters.device = dev;
+		outputParameters.hostApiSpecificStreamInfo = NULL;
+		outputParameters.sampleFormat = paFloat32;
+		outputParameters.suggestedLatency = Pa_GetDeviceInfo(dev)->defaultLowOutputLatency ;
+		outputParameters.hostApiSpecificStreamInfo = NULL; //See you specific host's API docs for info on using this field
+
+
+		run(Pa_OpenStream(&stream, &inputParameters, &outputParameters,  SAMPLE_RATE, FRAMES_PER_BUFFER, paNoFlag, callback, &data));
 		printf("Starting stream\n");	
 		run(Pa_StartStream(stream));
 		Pa_Sleep(4000);
