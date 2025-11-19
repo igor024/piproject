@@ -1,17 +1,19 @@
+#include <cmath>
 #include <stdio.h>
 #include <iostream>
+#include <cstring>
 #include <strings.h>
 #include "portaudio.h"
+#include <math.h>
+const double SAMPLE_RATE = 44100;
+const float FRAMES_PER_BUFFER = 256.0f;
 
-const double SAMPLE_RATE = 44120;
-const double FRAMES_PER_BUFFER = 256;
-
-//anonymous struct 
 struct stereo{
 	float left;
 	float right;
 };
 
+unsigned int cycle = 0;
 
 static int callback( const void *inputBuffer, void *outputBuffer,
 		    unsigned long framesPerBuffer,
@@ -22,21 +24,46 @@ static int callback( const void *inputBuffer, void *outputBuffer,
 	//cast void type pointers
 	stereo* data = (stereo*) userData;
 	(void) inputBuffer; //ignore inputBuffer
-	float* out = (float*) outputBuffer;
 
+	if (statusFlags & paOutputUnderflow) {
+		printf("Underflow!\n");
+		return 1;
+	}
+
+	if (statusFlags & paOutputOverflow) {
+		printf("Overflow!\n");
+		return 1;
+	}
+
+	float* out = (float*) outputBuffer;
+	double left = data->left;
+	double right = data->right;
+	/* play sawtooth
 	for(int i = 0; i < framesPerBuffer; ++i) {
 		*out++ = data->left;
 		*out++ = data->right;
-		data->left = 1.02 * data->left + 0.005;
-		data->right = 1.03 * data->right + 0.01;
+		data->left += 0.005f;
+		data->right += 0.2f;
 		if(data->left > 1) {
-			data->left = 0;
+			data->left = -1;
 		}
-		else if (data->right > 1) {
-			data->right = 0;
-		}
+		if (data->right > 1) {
+			data->right = -1;
+		} 
+	} */  
+	//play sine wave
+	for(int i = 0; i < framesPerBuffer; ++i) {
+		*out++ = sinf(left) / 5.0f;
+		*out++ = sinf(right) / 5.0f;
+		left += 0.04f;
+		right += 0.01f;
+		cycle++;
 	}
-	return 0; //return 1 to quit
+
+	data->left = left;
+	data->right = right;
+
+	return paContinue; //return 1 to quit
 }
 
 void run(PaError err) {
@@ -76,33 +103,30 @@ int main() {
 	try {
 		int dev = findDevice();
 		PaStream* stream;
-		stereo data = {0, 0};
+		stereo data = {0.02f, 0.02f};
+		printf("left %f right %f", data.left, data.right);
+
+		const PaDeviceInfo* devInfo = Pa_GetDeviceInfo(dev);
+
+		printf("Device %d Name: %s\n maxOutputChannels: %d\n maxInputChannels: %d\n defaultSampleRate: %f\n\n", dev, devInfo->name, devInfo->maxOutputChannels, devInfo->maxInputChannels, devInfo->defaultSampleRate);
+
+		if(devInfo->maxOutputChannels > 2) {
+			printf("Device does not support 2 channels. Aborting.\n");
+			throw 1;
+		}
 
 		PaStreamParameters outputParameters;
-		PaStreamParameters inputParameters;
 
-		bzero( &inputParameters, sizeof( inputParameters ) ); //not necessary if you are filling in all the fields
-		inputParameters.channelCount = 0;
-		inputParameters.device = dev;
-		inputParameters.hostApiSpecificStreamInfo = NULL;
-		inputParameters.sampleFormat = paFloat32;
-		inputParameters.suggestedLatency = Pa_GetDeviceInfo(dev)->defaultLowInputLatency ;
-		inputParameters.hostApiSpecificStreamInfo = NULL; //See you specific host's API docs for info on using this field
-
-
-		bzero( &outputParameters, sizeof( outputParameters ) ); //not necessary if you are filling in all the fields
-		outputParameters.channelCount = 22;
+		memset( &outputParameters, 0, sizeof( outputParameters ) ); //make NULL all fields
+		outputParameters.channelCount = 2;
 		outputParameters.device = dev;
-		outputParameters.hostApiSpecificStreamInfo = NULL;
 		outputParameters.sampleFormat = paFloat32;
-		outputParameters.suggestedLatency = Pa_GetDeviceInfo(dev)->defaultLowOutputLatency ;
-		outputParameters.hostApiSpecificStreamInfo = NULL; //See you specific host's API docs for info on using this field
+		outputParameters.suggestedLatency = devInfo->defaultLowOutputLatency;
 
-
-		run(Pa_OpenStream(&stream, &inputParameters, &outputParameters,  SAMPLE_RATE, FRAMES_PER_BUFFER, paNoFlag, callback, &data));
+		run(Pa_OpenStream(&stream, NULL, &outputParameters,  SAMPLE_RATE, (unsigned long)FRAMES_PER_BUFFER, paNoFlag, callback, &data));
 		printf("Starting stream\n");	
 		run(Pa_StartStream(stream));
-		Pa_Sleep(4000);
+		Pa_Sleep(10000);
 		printf("Closing stream\n");
 		run(Pa_StopStream(stream));
 		run(Pa_CloseStream(stream));
@@ -118,4 +142,6 @@ int main() {
 	catch (PaError err) {
 		printf("Pa_Initialize() error: %s\n", Pa_GetErrorText(err));
 	}
+	
+	return 0;
 }
