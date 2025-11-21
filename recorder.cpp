@@ -110,7 +110,7 @@ int main() {
 
 		printf("Device %d Name: %s\n maxOutputChannels: %d\n maxInputChannels: %d\n defaultSampleRate: %f\n\n", dev, devInfo->name, devInfo->maxOutputChannels, devInfo->maxInputChannels, devInfo->defaultSampleRate);
 
-		if(devInfo->maxOutputChannels > 2) {
+		if(devInfo->maxOutputChannels < 2) {
 			printf("Device does not support 2 channels. Aborting.\n");
 			throw 1;
 		}
