@@ -5,25 +5,31 @@
 #include <strings.h>
 #include "portaudio.h"
 #include <math.h>
-const double SAMPLE_RATE = 44100;
-const float FRAMES_PER_BUFFER = 256.0f;
 
-struct stereo{
-	float left;
-	float right;
+typedef float SAMPLE;
+
+const double SAMPLE_RATE = 44100;
+const unsigned int FRAMES_PER_BUFFER = 256.0f;
+const unsigned int NUM_SECONDS = 6;
+struct recording{
+	SAMPLE* data;
+	unsigned long framesRecorded;
+	unsigned long maxFrames;
+	int numChannels;
 };
 
-unsigned int cycle = 0;
-
-static int callback( const void *inputBuffer, void *outputBuffer,
-		    unsigned long framesPerBuffer,
-		    const PaStreamCallbackTimeInfo* timeInfo,
-		    PaStreamCallbackFlags statusFlags,
-		    void *userData )
+static int recordAudio( const void *inputBuffer, void *outputBuffer,
+		       unsigned long framesPerBuffer,
+		       const PaStreamCallbackTimeInfo* timeInfo,
+		       PaStreamCallbackFlags statusFlags,
+		       void *userData )
 {
 	//cast void type pointers
-	stereo* data = (stereo*) userData;
-	(void) inputBuffer; //ignore inputBuffer
+	recording* rec = (recording*) userData;
+	(void) outputBuffer; //ignore outputBuffer
+	SAMPLE* rptr = (SAMPLE*) inputBuffer;
+	SAMPLE* wptr = &rec->data[rec->framesRecorded * rec->numChannels];
+
 
 	if (statusFlags & paOutputUnderflow) {
 		printf("Underflow!\n");
@@ -35,36 +41,71 @@ static int callback( const void *inputBuffer, void *outputBuffer,
 		return 1;
 	}
 
-	float* out = (float*) outputBuffer;
-	double left = data->left;
-	double right = data->right;
-	/* play sawtooth
-	for(int i = 0; i < framesPerBuffer; ++i) {
-		*out++ = data->left;
-		*out++ = data->right;
-		data->left += 0.005f;
-		data->right += 0.2f;
-		if(data->left > 1) {
-			data->left = -1;
+	long numFrames = std::min(rec->maxFrames - rec->framesRecorded, framesPerBuffer);
+
+	//record
+	for(int i = 0; i < numFrames; ++i) {
+		for(int j = 0; j < rec->numChannels; ++j) {
+			if(inputBuffer == NULL) { 
+				*wptr++ = 0.0f;
+			} else {
+				*wptr++ = *rptr++;
+			}
 		}
-		if (data->right > 1) {
-			data->right = -1;
-		} 
-	} */  
-	//play sine wave
-	for(int i = 0; i < framesPerBuffer; ++i) {
-		*out++ = sinf(left) / 5.0f;
-		*out++ = sinf(right) / 5.0f;
-		left += 0.04f;
-		right += 0.01f;
-		cycle++;
 	}
 
-	data->left = left;
-	data->right = right;
+	rec->framesRecorded += numFrames;
 
-	return paContinue; //return 1 to quit
+	if(numFrames < framesPerBuffer) { //reached end
+		return paComplete;
+	}
+	return paContinue;
 }
+
+
+static int playAudio( const void *inputBuffer, void *outputBuffer,
+		       unsigned long framesPerBuffer,
+		       const PaStreamCallbackTimeInfo* timeInfo,
+		       PaStreamCallbackFlags statusFlags,
+		       void *userData )
+{
+	//cast void type pointers
+	recording* rec = (recording*) userData;
+	SAMPLE* out = (SAMPLE*) outputBuffer;
+
+	if (statusFlags & paOutputUnderflow) {
+		printf("Underflow!\n");
+		return 1;
+	}
+
+	if (statusFlags & paOutputOverflow) {
+		printf("Overflow!\n");
+		return 1;
+	}
+
+	long numFrames = std::min(rec->maxFrames - rec->framesRecorded, framesPerBuffer);
+
+	//record
+	for(int i = 0; i < numFrames; ++i) {
+		for(int j = 0; j < rec->numChannels; ++j) {
+			out+=
+
+		}
+	}
+
+	rec->framesRecorded += numFrames;
+
+	if(numFrames < framesPerBuffer) { //reached end
+		return paComplete;
+	}
+	return paContinue;
+}
+
+
+
+
+
+
 
 void run(PaError err) {
 	if(err != paNoError) {
@@ -103,27 +144,38 @@ int main() {
 	try {
 		int dev = findDevice();
 		PaStream* stream;
-		stereo data = {0.02f, 0.02f};
-		printf("left %f right %f", data.left, data.right);
+		recording rec;
+		rec.numChannels = 2;
+		rec.maxFrames = NUM_SECONDS * SAMPLE_RATE;
+		rec.framesRecorded = 0;
+		rec.data = (SAMPLE*)malloc(rec.maxFrames * rec.numChannels * sizeof(SAMPLE));
+
+		if(rec.data == NULL) {
+			printf("Failed to allocate memory for recording\n");
+			throw 1;
+		}
+
+		for( int i = 0; i < rec.maxFrames * rec.numChannels; ++i) {
+			rec.data[i] = 0;
+		}
 
 		const PaDeviceInfo* devInfo = Pa_GetDeviceInfo(dev);
 
 		printf("Device %d Name: %s\n maxOutputChannels: %d\n maxInputChannels: %d\n defaultSampleRate: %f\n\n", dev, devInfo->name, devInfo->maxOutputChannels, devInfo->maxInputChannels, devInfo->defaultSampleRate);
 
-		if(devInfo->maxOutputChannels < 2) {
+		if(devInfo->maxInputChannels < 2) {
 			printf("Device does not support 2 channels. Aborting.\n");
 			throw 1;
 		}
 
-		PaStreamParameters outputParameters;
+		PaStreamParameters inputParameters;
 
-		memset( &outputParameters, 0, sizeof( outputParameters ) ); //make NULL all fields
-		outputParameters.channelCount = 2;
-		outputParameters.device = dev;
-		outputParameters.sampleFormat = paFloat32;
-		outputParameters.suggestedLatency = devInfo->defaultLowOutputLatency;
-
-		run(Pa_OpenStream(&stream, NULL, &outputParameters,  SAMPLE_RATE, (unsigned long)FRAMES_PER_BUFFER, paNoFlag, callback, &data));
+		memset( &inputParameters, 0, sizeof( inputParameters ) ); //make NULL all fields
+		inputParameters.channelCount = 2;
+		inputParameters.device = dev;
+		inputParameters.sampleFormat = paFloat32;
+		inputParameters.suggestedLatency = devInfo->defaultLowInputLatency;
+		run(Pa_OpenStream(&stream, &inputParameters, NULL, SAMPLE_RATE, FRAMES_PER_BUFFER, paNoFlag, recordAudio, &rec));
 		printf("Starting stream\n");	
 		run(Pa_StartStream(stream));
 		Pa_Sleep(10000);
@@ -142,6 +194,6 @@ int main() {
 	catch (PaError err) {
 		printf("Pa_Initialize() error: %s\n", Pa_GetErrorText(err));
 	}
-	
+
 	return 0;
 }
