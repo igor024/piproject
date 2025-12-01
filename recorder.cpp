@@ -9,6 +9,7 @@
 typedef float SAMPLE;
 
 const double SAMPLE_RATE = 44100;
+const int NUM_CHANNELS = 2;
 const unsigned int FRAMES_PER_BUFFER = 256.0f;
 const unsigned int NUM_SECONDS = 6;
 struct recording{
@@ -70,7 +71,8 @@ static int playAudio( const void *inputBuffer, void *outputBuffer,
 		       void *userData )
 {
 	//cast void type pointers
-	recording* rec = (recording*) userData;
+	recording *rec = (recording*) userData;
+	SAMPLE* rptr = &rec->data[rec->framesRecorded * rec->numChannels];
 	SAMPLE* out = (SAMPLE*) outputBuffer;
 
 	if (statusFlags & paOutputUnderflow) {
@@ -85,11 +87,10 @@ static int playAudio( const void *inputBuffer, void *outputBuffer,
 
 	long numFrames = std::min(rec->maxFrames - rec->framesRecorded, framesPerBuffer);
 
-	//record
+	//playback
 	for(int i = 0; i < numFrames; ++i) {
 		for(int j = 0; j < rec->numChannels; ++j) {
-			out+=
-
+			*out++ = *rptr++;
 		}
 	}
 
@@ -145,8 +146,8 @@ int main() {
 		int dev = findDevice();
 		PaStream* stream;
 		recording rec;
-		rec.numChannels = 2;
-		rec.maxFrames = NUM_SECONDS * SAMPLE_RATE;
+		rec.numChannels = NUM_CHANNELS;
+		rec.maxFrames = NUM_SECONDS * SAMPLE_RATE * NUM_CHANNELS;
 		rec.framesRecorded = 0;
 		rec.data = (SAMPLE*)malloc(rec.maxFrames * rec.numChannels * sizeof(SAMPLE));
 
@@ -175,12 +176,33 @@ int main() {
 		inputParameters.device = dev;
 		inputParameters.sampleFormat = paFloat32;
 		inputParameters.suggestedLatency = devInfo->defaultLowInputLatency;
+
+		PaStreamParameters outputParameters;
+
+		memset( &outputParameters, 0, sizeof( outputParameters ) ); //make NULL all fields
+		outputParameters.channelCount = 2;
+		outputParameters.device = dev;
+		outputParameters.sampleFormat = paFloat32;
+		outputParameters.suggestedLatency = devInfo->defaultLowOutputLatency;
+
+		//record audio
 		run(Pa_OpenStream(&stream, &inputParameters, NULL, SAMPLE_RATE, FRAMES_PER_BUFFER, paNoFlag, recordAudio, &rec));
 		printf("Starting stream\n");	
 		run(Pa_StartStream(stream));
 		Pa_Sleep(10000);
 		printf("Closing stream\n");
 		run(Pa_StopStream(stream));
+		//play audio
+		rec.framesRecorded = 0;
+		run(Pa_OpenStream(&stream, NULL, &outputParameters,  SAMPLE_RATE, (unsigned long)FRAMES_PER_BUFFER, paNoFlag, playAudio, &rec));
+		printf("Starting stream\n");	
+		run(Pa_StartStream(stream));
+		Pa_Sleep(10000);
+		printf("Closing stream\n");
+		run(Pa_StopStream(stream));
+
+		printf("Finished");
+
 		run(Pa_CloseStream(stream));
 	}
 	catch (PaError err) {
